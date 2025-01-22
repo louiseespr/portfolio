@@ -1,0 +1,379 @@
+-- Initialize Database
+CREATE DATABASE crypto_analysis;
+
+-- Connect to database
+\c crypto_analysis
+
+-- Schema Creation
+-----------------
+
+-- Core Tables
+-------------
+
+-- Create coins table
+CREATE TABLE coins (
+    coin_id SERIAL PRIMARY KEY,
+    symbol VARCHAR(10) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    date_added DATE NOT NULL,
+    market_cap_usd DECIMAL(20,2),
+    price_usd DECIMAL(20,8),
+    volume_24h_usd DECIMAL(20,2),
+    circulating_supply DECIMAL(20,2),
+    max_supply DECIMAL(20,2),
+    percent_change_24h DECIMAL(10,2),
+    website_url VARCHAR(255),
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create price history table
+CREATE TABLE price_history (
+    id SERIAL PRIMARY KEY,
+    coin_id INTEGER REFERENCES coins(coin_id),
+    date DATE NOT NULL,
+    price_usd DECIMAL(20,8) NOT NULL,
+    volume_usd DECIMAL(20,2),
+    market_cap_usd DECIMAL(20,2),
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create trading pairs table
+CREATE TABLE trading_pairs (
+    pair_id SERIAL PRIMARY KEY,
+    base_coin_id INTEGER REFERENCES coins(coin_id),
+    quote_coin_id INTEGER REFERENCES coins(coin_id),
+    exchange VARCHAR(100),
+    last_price DECIMAL(20,8),
+    volume_24h DECIMAL(20,2)
+);
+
+-- Create market metrics table
+CREATE TABLE market_metrics (
+    metric_id SERIAL PRIMARY KEY,
+    date DATE NOT NULL,
+    total_market_cap DECIMAL(20,2),
+    total_volume_24h DECIMAL(20,2),
+    btc_dominance DECIMAL(5,2),
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Sentiment Analysis Tables
+--------------------------
+
+CREATE TABLE sentiment_sources (
+    source_id SERIAL PRIMARY KEY,
+    source_name VARCHAR(100) NOT NULL,
+    source_type VARCHAR(50) CHECK (source_type IN ('social_media', 'news', 'technical')),
+    reliability_score DECIMAL(3,2) CHECK (reliability_score BETWEEN 0 AND 1)
+);
+
+CREATE TABLE sentiment_data (
+    sentiment_id SERIAL PRIMARY KEY,
+    coin_id INTEGER REFERENCES coins(coin_id),
+    source_id INTEGER REFERENCES sentiment_sources(source_id),
+    timestamp TIMESTAMP NOT NULL,
+    sentiment_score DECIMAL(5,2) CHECK (sentiment_score BETWEEN -100 AND 100),
+    sentiment_magnitude DECIMAL(5,2),
+    mentions_count INTEGER,
+    data_text TEXT
+);
+
+CREATE TABLE sentiment_aggregates (
+    aggregate_id SERIAL PRIMARY KEY,
+    coin_id INTEGER REFERENCES coins(coin_id),
+    date DATE NOT NULL,
+    avg_sentiment_score DECIMAL(5,2),
+    total_mentions INTEGER,
+    weighted_score DECIMAL(5,2),
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Portfolio Analysis Tables
+--------------------------
+
+CREATE TABLE portfolio_simulation (
+    simulation_id SERIAL PRIMARY KEY,
+    date DATE NOT NULL,
+    coin_id INTEGER REFERENCES coins(coin_id),
+    quantity DECIMAL(20,8),
+    entry_price DECIMAL(20,8),
+    investment_usd DECIMAL(20,2)
+);
+
+-- Reporting System Tables
+------------------------
+
+CREATE TABLE report_templates (
+    template_id SERIAL PRIMARY KEY,
+    template_name VARCHAR(100) NOT NULL,
+    template_description TEXT,
+    query_text TEXT NOT NULL,
+    parameters JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE scheduled_reports (
+    schedule_id SERIAL PRIMARY KEY,
+    template_id INTEGER REFERENCES report_templates(template_id),
+    schedule_type VARCHAR(50) CHECK (schedule_type IN ('daily', 'weekly', 'monthly')),
+    next_run TIMESTAMP,
+    last_run TIMESTAMP,
+    recipients JSONB,
+    active BOOLEAN DEFAULT true
+);
+
+CREATE TABLE report_history (
+    history_id SERIAL PRIMARY KEY,
+    schedule_id INTEGER REFERENCES scheduled_reports(schedule_id),
+    run_timestamp TIMESTAMP,
+    status VARCHAR(50),
+    output_data JSONB,
+    error_message TEXT
+);
+
+-- Functions
+-----------
+
+-- Calculate volatility
+CREATE OR REPLACE FUNCTION calculate_volatility(
+    p_coin_id INTEGER,
+    p_days INTEGER
+)
+RETURNS DECIMAL AS $$
+DECLARE
+    volatility DECIMAL;
+BEGIN
+    SELECT STDDEV(price_usd) / AVG(price_usd) * 100
+    INTO volatility
+    FROM price_history
+    WHERE coin_id = p_coin_id
+    AND date >= CURRENT_DATE - p_days;
+    
+    RETURN ROUND(volatility, 2);
+END;
+$$ LANGUAGE plpgsql;
+
+-- Calculate VWAP
+CREATE OR REPLACE FUNCTION calculate_vwap(
+    p_coin_id INTEGER,
+    p_start_date DATE
+)
+RETURNS DECIMAL AS $$
+BEGIN
+    RETURN (
+        SELECT SUM(price_usd * volume_usd) / NULLIF(SUM(volume_usd), 0)
+        FROM price_history
+        WHERE coin_id = p_coin_id
+        AND date >= p_start_date
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+-- Calculate weighted sentiment
+CREATE OR REPLACE FUNCTION calculate_weighted_sentiment(
+    p_coin_id INTEGER,
+    p_date DATE
+)
+RETURNS DECIMAL AS $$
+BEGIN
+    RETURN (
+        SELECT 
+            SUM(sd.sentiment_score * ss.reliability_score * sd.sentiment_magnitude) / 
+            NULLIF(SUM(ss.reliability_score * sd.sentiment_magnitude), 0)
+        FROM sentiment_data sd
+        JOIN sentiment_sources ss ON sd.source_id = ss.source_id
+        WHERE sd.coin_id = p_coin_id
+        AND DATE(sd.timestamp) = p_date
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+-- Calculate risk metrics
+CREATE OR REPLACE FUNCTION calculate_risk_metrics(
+    p_coin_id INTEGER,
+    p_days INTEGER
+)
+RETURNS TABLE (
+    metric_name VARCHAR,
+    metric_value DECIMAL
+) AS $$
+BEGIN
+    RETURN QUERY
+    WITH daily_returns AS (
+        SELECT 
+            (price_usd - LAG(price_usd) OVER (ORDER BY date))
+            / NULLIF(LAG(price_usd) OVER (ORDER BY date), 0) as return
+        FROM price_history
+        WHERE coin_id = p_coin_id
+        AND date >= CURRENT_DATE - p_days
+    )
+    SELECT
+        metric_name,
+        metric_value
+    FROM (
+        SELECT 
+            'Volatility' as metric_name,
+            ROUND(STDDEV(return) * SQRT(365) * 100, 2) as metric_value
+        FROM daily_returns
+        UNION ALL
+        SELECT 
+            'Max Drawdown',
+            ROUND((MIN(return) * 100), 2)
+        FROM daily_returns
+        UNION ALL
+        SELECT 
+            'Sharpe Ratio',
+            ROUND(AVG(return) / NULLIF(STDDEV(return), 0) * SQRT(365), 2)
+        FROM daily_returns
+    ) metrics;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Views
+--------
+
+-- Market overview
+CREATE VIEW market_overview AS
+SELECT 
+    c.name,
+    c.symbol,
+    c.price_usd,
+    c.market_cap_usd,
+    c.volume_24h_usd,
+    ROUND((c.price_usd * c.circulating_supply), 2) as current_market_value,
+    ROUND((c.circulating_supply / NULLIF(c.max_supply, 0) * 100), 2) as supply_ratio,
+    calculate_volatility(c.coin_id, 30) as volatility_30d
+FROM coins c
+WHERE c.market_cap_usd > 0
+ORDER BY c.market_cap_usd DESC;
+
+-- Market sentiment analysis
+CREATE VIEW market_sentiment_analysis AS
+WITH daily_sentiment AS (
+    SELECT 
+        c.symbol,
+        c.name,
+        sa.date,
+        sa.avg_sentiment_score,
+        sa.total_mentions,
+        sa.weighted_score,
+        LAG(sa.weighted_score) OVER (PARTITION BY c.coin_id ORDER BY sa.date) as prev_score,
+        c.price_usd,
+        c.percent_change_24h
+    FROM coins c
+    JOIN sentiment_aggregates sa ON c.coin_id = sa.coin_id
+)
+SELECT 
+    symbol,
+    name,
+    date,
+    avg_sentiment_score,
+    total_mentions,
+    weighted_score,
+    CASE 
+        WHEN weighted_score > prev_score THEN 'IMPROVING'
+        WHEN weighted_score < prev_score THEN 'DECLINING'
+        ELSE 'STABLE'
+    END as sentiment_trend,
+    CASE 
+        WHEN weighted_score > 50 THEN 'VERY POSITIVE'
+        WHEN weighted_score > 25 THEN 'POSITIVE'
+        WHEN weighted_score > -25 THEN 'NEUTRAL'
+        WHEN weighted_score > -50 THEN 'NEGATIVE'
+        ELSE 'VERY NEGATIVE'
+    END as sentiment_category,
+    price_usd,
+    percent_change_24h
+FROM daily_sentiment;
+
+-- Create materialized view for trend analysis
+CREATE MATERIALIZED VIEW trend_analysis AS
+WITH daily_metrics AS (
+    SELECT 
+        date,
+        SUM(market_cap_usd) as total_market_cap,
+        SUM(volume_usd) as total_volume,
+        COUNT(DISTINCT coin_id) as active_coins
+    FROM price_history
+    GROUP BY date
+),
+moving_averages AS (
+    SELECT 
+        date,
+        total_market_cap,
+        AVG(total_market_cap) OVER (
+            ORDER BY date 
+            ROWS BETWEEN 7 PRECEDING AND CURRENT ROW
+        ) as sma_7,
+        AVG(total_market_cap) OVER (
+            ORDER BY date 
+            ROWS BETWEEN 30 PRECEDING AND CURRENT ROW
+        ) as sma_30
+    FROM daily_metrics
+)
+SELECT 
+    date,
+    total_market_cap,
+    sma_7,
+    sma_30,
+    CASE 
+        WHEN sma_7 > sma_30 THEN 'BULLISH'
+        WHEN sma_7 < sma_30 THEN 'BEARISH'
+        ELSE 'NEUTRAL'
+    END as market_trend
+FROM moving_averages;
+
+-- Indexes
+----------
+
+CREATE INDEX idx_price_history_coin_date ON price_history(coin_id, date);
+CREATE INDEX idx_sentiment_data_coin_timestamp ON sentiment_data(coin_id, timestamp);
+CREATE INDEX idx_trading_pairs_base_quote ON trading_pairs(base_coin_id, quote_coin_id);
+CREATE INDEX idx_market_metrics_date ON market_metrics(date);
+CREATE INDEX idx_sentiment_aggregates_coin_date ON sentiment_aggregates(coin_id, date);
+
+-- Sample Data Insertion
+----------------------
+
+-- Insert sample coins
+INSERT INTO coins (symbol, name, date_added, market_cap_usd, price_usd, volume_24h_usd)
+VALUES 
+    ('BTC', 'Bitcoin', '2009-01-03', 800000000000.00, 42000.50, 25000000000.00),
+    ('ETH', 'Ethereum', '2015-07-30', 300000000000.00, 2200.75, 15000000000.00),
+    ('USDT', 'Tether', '2014-10-06', 80000000000.00, 1.00, 50000000000.00);
+
+-- Insert sample sentiment sources
+INSERT INTO sentiment_sources (source_name, source_type, reliability_score)
+VALUES 
+    ('Twitter', 'social_media', 0.6),
+    ('Financial News', 'news', 0.8),
+    ('Technical Analysis', 'technical', 0.7);
+
+-- Insert sample report template
+INSERT INTO report_templates (template_name, template_description, query_text, parameters)
+VALUES (
+    'Daily Market Overview',
+    'Comprehensive daily market report including prices, sentiment, and key metrics',
+    'SELECT * FROM market_overview WHERE date = :report_date',
+    '{"required_params": ["report_date"]}'
+);
+
+-- Documentation
+---------------
+
+COMMENT ON TABLE coins IS 'Core table storing current cryptocurrency information';
+COMMENT ON TABLE price_history IS 'Historical price and volume data for all coins';
+COMMENT ON TABLE sentiment_data IS 'Raw sentiment data from various sources';
+COMMENT ON FUNCTION calculate_volatility IS 'Calculates price volatility over specified period';
+COMMENT ON VIEW market_overview IS 'Comprehensive market overview with key metrics';
+
+-- Permissions
+-------------
+
+-- Read-only user for reporting
+CREATE ROLE report_user WITH LOGIN PASSWORD 'report_pass';
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO report_user;
+
+-- Analyst role with more permissions
+CREATE ROLE analyst WITH LOGIN PASSWORD 'analyst_pass';
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO analyst;
