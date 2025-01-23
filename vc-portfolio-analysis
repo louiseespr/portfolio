@@ -1,0 +1,320 @@
+-- Sample Data Insertion
+
+-- Insert sample companies
+INSERT INTO companies (company_id, company_name, sector, investment_stage, initial_investment_date, exit_date, exit_type, status) VALUES
+(1, 'TechStart AI', 'Artificial Intelligence', 'Series A', '2020-01-15', NULL, NULL, 'Active'),
+(2, 'HealthCore', 'Healthcare', 'Series B', '2019-03-20', '2023-06-30', 'IPO', 'Exited'),
+(3, 'GreenEnergy', 'CleanTech', 'Series A', '2021-02-10', NULL, NULL, 'Active'),
+(4, 'FinTech Plus', 'Financial Services', 'Seed', '2020-07-01', '2023-12-15', 'M&A', 'Exited'),
+(5, 'CloudScale', 'Enterprise Software', 'Series C', '2018-11-30', NULL, NULL, 'Active'),
+(6, 'BioTech Solutions', 'Healthcare', 'Series B', '2019-09-15', '2022-08-20', 'Written Off', 'Written Off'),
+(7, 'DataSense', 'Data Analytics', 'Series A', '2021-05-20', NULL, NULL, 'Active'),
+(8, 'RoboTech', 'Robotics', 'Series B', '2020-04-10', '2024-01-15', 'M&A', 'Exited');
+
+-- Insert sample investment rounds
+INSERT INTO investment_rounds (round_id, company_id, round_date, round_type, pre_money_valuation, amount_invested, ownership_percentage) VALUES
+(1, 1, '2020-01-15', 'Series A', 15000000, 5000000, 25.00),
+(2, 1, '2022-03-10', 'Series B', 50000000, 10000000, 15.00),
+(3, 2, '2019-03-20', 'Series B', 30000000, 8000000, 20.00),
+(4, 3, '2021-02-10', 'Series A', 20000000, 6000000, 23.00),
+(5, 4, '2020-07-01', 'Seed', 5000000, 1000000, 15.00),
+(6, 5, '2018-11-30', 'Series C', 80000000, 15000000, 12.00),
+(7, 6, '2019-09-15', 'Series B', 25000000, 7000000, 22.00),
+(8, 7, '2021-05-20', 'Series A', 18000000, 5500000, 24.00),
+(9, 8, '2020-04-10', 'Series B', 35000000, 9000000, 19.00);
+
+-- Insert sample cash flows
+INSERT INTO cash_flows (cash_flow_id, company_id, flow_date, amount, flow_type, description) VALUES
+(1, 1, '2020-01-15', -5000000, 'Investment', 'Initial Series A Investment'),
+(2, 1, '2022-03-10', -10000000, 'Investment', 'Follow-on Series B Investment'),
+(3, 2, '2019-03-20', -8000000, 'Investment', 'Series B Investment'),
+(4, 2, '2023-06-30', 25000000, 'Distribution', 'IPO Distribution'),
+(5, 3, '2021-02-10', -6000000, 'Investment', 'Series A Investment'),
+(6, 4, '2020-07-01', -1000000, 'Investment', 'Seed Investment'),
+(7, 4, '2023-12-15', 3500000, 'Distribution', 'M&A Distribution'),
+(8, 5, '2018-11-30', -15000000, 'Investment', 'Series C Investment'),
+(9, 6, '2019-09-15', -7000000, 'Investment', 'Series B Investment'),
+(10, 7, '2021-05-20', -5500000, 'Investment', 'Series A Investment'),
+(11, 8, '2020-04-10', -9000000, 'Investment', 'Series B Investment'),
+(12, 8, '2024-01-15', 27000000, 'Distribution', 'M&A Distribution');
+
+-- Companies table to track portfolio companies
+CREATE TABLE companies (
+    company_id INTEGER PRIMARY KEY,
+    company_name VARCHAR(100),
+    sector VARCHAR(50),
+    investment_stage VARCHAR(50),
+    initial_investment_date DATE,
+    exit_date DATE NULL,
+    exit_type VARCHAR(50) NULL,
+    status VARCHAR(20) CHECK (status IN ('Active', 'Exited', 'Written Off'))
+);
+
+-- Investment rounds table to track all funding rounds
+CREATE TABLE investment_rounds (
+    round_id INTEGER PRIMARY KEY,
+    company_id INTEGER,
+    round_date DATE,
+    round_type VARCHAR(50),
+    pre_money_valuation DECIMAL(15,2),
+    amount_invested DECIMAL(15,2),
+    ownership_percentage DECIMAL(5,2),
+    FOREIGN KEY (company_id) REFERENCES companies(company_id)
+);
+
+-- Cash flows table to track investments and distributions
+CREATE TABLE cash_flows (
+    cash_flow_id INTEGER PRIMARY KEY,
+    company_id INTEGER,
+    flow_date DATE,
+    amount DECIMAL(15,2),
+    flow_type VARCHAR(20) CHECK (flow_type IN ('Investment', 'Distribution')),
+    description VARCHAR(200),
+    FOREIGN KEY (company_id) REFERENCES companies(company_id)
+);
+
+-- Create views for key metrics and analysis
+
+-- Portfolio Overview
+CREATE VIEW portfolio_overview AS
+SELECT 
+    c.sector,
+    COUNT(DISTINCT c.company_id) as num_companies,
+    SUM(CASE WHEN c.status = 'Active' THEN 1 ELSE 0 END) as active_companies,
+    SUM(CASE WHEN c.status = 'Exited' THEN 1 ELSE 0 END) as exited_companies,
+    SUM(cf.amount) as total_invested
+FROM companies c
+LEFT JOIN cash_flows cf ON c.company_id = cf.company_id
+    AND cf.flow_type = 'Investment'
+GROUP BY c.sector;
+
+-- Investment Multiple Analysis
+CREATE VIEW investment_multiples AS
+WITH investments AS (
+    SELECT 
+        company_id,
+        ABS(SUM(CASE WHEN flow_type = 'Investment' THEN amount ELSE 0 END)) as total_invested
+    FROM cash_flows
+    GROUP BY company_id
+),
+distributions AS (
+    SELECT 
+        company_id,
+        SUM(CASE WHEN flow_type = 'Distribution' THEN amount ELSE 0 END) as total_returned
+    FROM cash_flows
+    GROUP BY company_id
+)
+SELECT 
+    c.company_name,
+    c.sector,
+    i.total_invested,
+    COALESCE(d.total_returned, 0) as total_returned,
+    ROUND(COALESCE(d.total_returned / NULLIF(i.total_invested, 0), 0), 2) as investment_multiple
+FROM companies c
+JOIN investments i ON c.company_id = i.company_id
+LEFT JOIN distributions d ON c.company_id = d.company_id;
+
+-- Function to calculate IRR
+CREATE OR REPLACE FUNCTION calculate_irr(company_id_param INTEGER)
+RETURNS DECIMAL(10,2) AS $$
+DECLARE
+    irr DECIMAL(10,2);
+BEGIN
+    -- This is a simplified IRR calculation
+    -- In practice, you would implement a more sophisticated numerical method
+    WITH cash_flow_years AS (
+        SELECT 
+            amount,
+            EXTRACT(YEAR FROM flow_date) - 
+            EXTRACT(YEAR FROM MIN(flow_date) OVER ()) as year_number
+        FROM cash_flows
+        WHERE company_id = company_id_param
+    )
+    SELECT 
+        CASE 
+            WHEN SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END) = 0 THEN 0
+            ELSE (POWER(
+                SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) / 
+                SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END),
+                1.0 / NULLIF(MAX(year_number), 0)
+            ) - 1) * 100
+        END
+    INTO irr
+    FROM cash_flow_years;
+    
+    RETURN COALESCE(irr, 0);
+END;
+$$ LANGUAGE plpgsql;
+
+-- LP Report Query
+CREATE VIEW lp_report AS
+SELECT 
+    c.sector,
+    COUNT(DISTINCT c.company_id) as num_portfolio_companies,
+    SUM(ABS(CASE WHEN cf.flow_type = 'Investment' THEN cf.amount ELSE 0 END)) as total_invested,
+    SUM(CASE WHEN cf.flow_type = 'Distribution' THEN cf.amount ELSE 0 END) as total_distributions,
+    ROUND(AVG(calculate_irr(c.company_id)), 2) as avg_irr,
+    ROUND(SUM(CASE WHEN cf.flow_type = 'Distribution' THEN cf.amount ELSE 0 END) / 
+        NULLIF(SUM(ABS(CASE WHEN cf.flow_type = 'Investment' THEN cf.amount ELSE 0 END)), 0), 2) as tvpi
+FROM companies c
+LEFT JOIN cash_flows cf ON c.company_id = cf.company_id
+GROUP BY c.sector
+ORDER BY total_invested DESC;
+
+-- Vintage Year Performance
+CREATE VIEW vintage_year_performance AS
+WITH vintage_investments AS (
+    SELECT 
+        EXTRACT(YEAR FROM initial_investment_date) as vintage_year,
+        company_id,
+        SUM(CASE WHEN cf.flow_type = 'Investment' THEN ABS(cf.amount) ELSE 0 END) as total_invested,
+        SUM(CASE WHEN cf.flow_type = 'Distribution' THEN cf.amount ELSE 0 END) as total_distributed
+    FROM companies c
+    LEFT JOIN cash_flows cf ON c.company_id = cf.company_id
+    GROUP BY EXTRACT(YEAR FROM initial_investment_date), company_id
+)
+SELECT 
+    vintage_year,
+    COUNT(*) as num_companies,
+    SUM(total_invested) as total_invested,
+    SUM(total_distributed) as total_distributed,
+    ROUND(SUM(total_distributed) / NULLIF(SUM(total_invested), 0), 2) as tvpi,
+    ROUND(AVG(calculate_irr(company_id)), 2) as avg_irr
+FROM vintage_investments
+GROUP BY vintage_year
+ORDER BY vintage_year;
+
+-- Investment Stage Analysis
+CREATE VIEW investment_stage_analysis AS
+SELECT 
+    investment_stage,
+    COUNT(*) as num_companies,
+    ROUND(AVG(amount_invested), 2) as avg_investment_size,
+    ROUND(AVG(ownership_percentage), 2) as avg_ownership_percentage,
+    ROUND(AVG(pre_money_valuation), 2) as avg_pre_money_valuation
+FROM companies c
+JOIN investment_rounds ir ON c.company_id = ir.company_id
+GROUP BY investment_stage
+ORDER BY avg_investment_size DESC;
+
+-- Exit Multiples by Sector
+CREATE VIEW exit_multiples_by_sector AS
+WITH exit_data AS (
+    SELECT 
+        c.sector,
+        c.company_id,
+        ABS(SUM(CASE WHEN cf.flow_type = 'Investment' THEN cf.amount ELSE 0 END)) as total_invested,
+        SUM(CASE WHEN cf.flow_type = 'Distribution' THEN cf.amount ELSE 0 END) as total_returned
+    FROM companies c
+    LEFT JOIN cash_flows cf ON c.company_id = cf.company_id
+    WHERE c.status = 'Exited'
+    GROUP BY c.sector, c.company_id
+)
+SELECT 
+    sector,
+    COUNT(*) as num_exits,
+    ROUND(AVG(total_returned / NULLIF(total_invested, 0)), 2) as avg_exit_multiple,
+    ROUND(MIN(total_returned / NULLIF(total_invested, 0)), 2) as min_exit_multiple,
+    ROUND(MAX(total_returned / NULLIF(total_invested, 0)), 2) as max_exit_multiple
+FROM exit_data
+GROUP BY sector
+HAVING COUNT(*) > 0
+ORDER BY avg_exit_multiple DESC;
+
+-- Portfolio Company Growth Metrics
+CREATE VIEW portfolio_growth_metrics AS
+WITH latest_valuation AS (
+    SELECT 
+        company_id,
+        FIRST_VALUE(pre_money_valuation + amount_invested) OVER (
+            PARTITION BY company_id 
+            ORDER BY round_date DESC
+        ) as latest_valuation,
+        FIRST_VALUE(round_date) OVER (
+            PARTITION BY company_id 
+            ORDER BY round_date DESC
+        ) as latest_round_date
+    FROM investment_rounds
+),
+initial_valuation AS (
+    SELECT 
+        company_id,
+        FIRST_VALUE(pre_money_valuation + amount_invested) OVER (
+            PARTITION BY company_id 
+            ORDER BY round_date ASC
+        ) as initial_valuation,
+        FIRST_VALUE(round_date) OVER (
+            PARTITION BY company_id 
+            ORDER BY round_date ASC
+        ) as initial_round_date
+    FROM investment_rounds
+)
+SELECT 
+    c.company_name,
+    c.sector,
+    i.initial_valuation,
+    l.latest_valuation,
+    ROUND((l.latest_valuation / NULLIF(i.initial_valuation, 0) - 1) * 100, 2) as valuation_growth_pct,
+    ROUND(
+        (l.latest_valuation / NULLIF(i.initial_valuation, 0))^(1/NULLIF(
+            EXTRACT(YEAR FROM l.latest_round_date) - 
+            EXTRACT(YEAR FROM i.initial_round_date), 0
+        )) - 1, 2
+    ) * 100 as cagr_pct
+FROM companies c
+JOIN latest_valuation l ON c.company_id = l.company_id
+JOIN initial_valuation i ON c.company_id = i.company_id
+WHERE c.status = 'Active'
+ORDER BY cagr_pct DESC;
+
+-- Visualization Queries
+
+-- Portfolio Composition Query
+CREATE VIEW portfolio_composition AS
+SELECT 
+    sector,
+    COUNT(*) as num_companies,
+    ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as sector_percentage,
+    SUM(ABS(cf.amount)) as total_invested,
+    ROUND(SUM(ABS(cf.amount)) * 100.0 / SUM(SUM(ABS(cf.amount))) OVER (), 2) as investment_percentage
+FROM companies c
+LEFT JOIN cash_flows cf ON c.company_id = cf.company_id
+    AND cf.flow_type = 'Investment'
+GROUP BY sector
+ORDER BY total_invested DESC;
+
+-- Investment Pace Query
+CREATE VIEW investment_pace AS
+SELECT 
+    DATE_TRUNC('quarter', flow_date) as quarter,
+    COUNT(DISTINCT company_id) as num_investments,
+    SUM(ABS(amount)) as total_invested,
+    SUM(SUM(ABS(amount))) OVER (ORDER BY DATE_TRUNC('quarter', flow_date)) as cumulative_invested
+FROM cash_flows
+WHERE flow_type = 'Investment'
+GROUP BY DATE_TRUNC('quarter', flow_date)
+ORDER BY quarter;
+
+-- Distribution Waterfall Query
+CREATE VIEW distribution_waterfall AS
+WITH returns_data AS (
+    SELECT 
+        c.company_id,
+        c.company_name,
+        ABS(SUM(CASE WHEN cf.flow_type = 'Investment' THEN cf.amount ELSE 0 END)) as total_invested,
+        SUM(CASE WHEN cf.flow_type = 'Distribution' THEN cf.amount ELSE 0 END) as total_returned,
+        ROUND(SUM(CASE WHEN cf.flow_type = 'Distribution' THEN cf.amount ELSE 0 END) / 
+            NULLIF(ABS(SUM(CASE WHEN cf.flow_type = 'Investment' THEN cf.amount ELSE 0 END)), 0), 2) as multiple
+    FROM companies c
+    LEFT JOIN cash_flows cf ON c.company_id = cf.company_id
+    GROUP BY c.company_id, c.company_name
+)
+SELECT 
+    company_name,
+    total_invested,
+    total_returned,
+    multiple,
+    SUM(total_returned) OVER (ORDER BY multiple DESC) as cumulative_distributions
+FROM returns_data
+WHERE total_returned > 0
+ORDER BY multiple DESC;
