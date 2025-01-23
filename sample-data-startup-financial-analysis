@@ -1,0 +1,139 @@
+-- Sample Data Population for SaaS Financial Analytics
+-- This file provides realistic sample data for demonstration and testing
+
+USE saas_analytics;
+
+-- Reset tables if they exist
+SET FOREIGN_KEY_CHECKS = 0;
+TRUNCATE TABLE transactions;
+TRUNCATE TABLE subscriptions;
+TRUNCATE TABLE customers;
+TRUNCATE TABLE plans;
+SET FOREIGN_KEY_CHECKS = 1;
+
+-- Populate plans
+INSERT INTO plans (plan_id, plan_name, monthly_price, features) VALUES
+(1, 'Basic', 99.99, '{"storage": "10GB", "users": 5, "api_calls": "10000/month"}'),
+(2, 'Pro', 299.99, '{"storage": "50GB", "users": 20, "api_calls": "50000/month"}'),
+(3, 'Enterprise', 999.99, '{"storage": "unlimited", "users": "unlimited", "api_calls": "unlimited"}'),
+(4, 'Startup', 199.99, '{"storage": "25GB", "users": 10, "api_calls": "25000/month"}');
+
+-- Populate customers with realistic company data
+INSERT INTO customers (customer_id, company_name, industry, country, creation_date, company_size) VALUES
+(1, 'TechFlow AI', 'Technology', 'USA', '2023-01-15', '10-50'),
+(2, 'DataCraft Solutions', 'Technology', 'UK', '2023-01-20', '50-200'),
+(3, 'Green Energy Co', 'Energy', 'Germany', '2023-02-01', '200-500'),
+(4, 'HealthTech Innovations', 'Healthcare', 'Canada', '2023-02-15', '10-50'),
+(5, 'FinanceHub Global', 'Finance', 'Singapore', '2023-03-01', '50-200'),
+(6, 'EduTech Solutions', 'Education', 'Australia', '2023-03-15', '10-50'),
+(7, 'RetailGenius', 'Retail', 'USA', '2023-04-01', '50-200'),
+(8, 'MediaFlow Digital', 'Media', 'France', '2023-04-15', '10-50'),
+(9, 'CloudNine Systems', 'Technology', 'India', '2023-05-01', '200-500'),
+(10, 'SmartFactory Pro', 'Manufacturing', 'Japan', '2023-05-15', '50-200'),
+(11, 'AgriTech Solutions', 'Agriculture', 'Brazil', '2023-06-01', '10-50'),
+(12, 'CyberShield Inc', 'Technology', 'USA', '2023-06-15', '50-200'),
+(13, 'BioTech Research', 'Healthcare', 'Switzerland', '2023-07-01', '50-200'),
+(14, 'LogisticsPro', 'Transportation', 'Netherlands', '2023-07-15', '200-500'),
+(15, 'ConsultingPlus', 'Professional Services', 'UK', '2023-08-01', '10-50');
+
+-- Populate subscriptions with realistic subscription patterns
+INSERT INTO subscriptions (subscription_id, customer_id, plan_id, start_date, end_date, status) VALUES
+-- Active subscriptions
+(1, 1, 1, '2023-01-15', NULL, 'active'),
+(2, 2, 2, '2023-01-20', NULL, 'active'),
+(3, 3, 3, '2023-02-01', NULL, 'active'),
+(4, 4, 1, '2023-02-15', NULL, 'active'),
+(5, 5, 2, '2023-03-01', NULL, 'active'),
+(6, 6, 1, '2023-03-15', '2023-09-15', 'cancelled'),
+(7, 7, 2, '2023-04-01', NULL, 'active'),
+(8, 8, 1, '2023-04-15', '2023-10-15', 'cancelled'),
+(9, 9, 3, '2023-05-01', NULL, 'active'),
+(10, 10, 2, '2023-05-15', NULL, 'active'),
+(11, 11, 1, '2023-06-01', NULL, 'active'),
+(12, 12, 2, '2023-06-15', NULL, 'active'),
+(13, 13, 3, '2023-07-01', '2023-12-31', 'cancelled'),
+(14, 14, 2, '2023-07-15', NULL, 'active'),
+(15, 15, 1, '2023-08-01', NULL, 'active');
+
+-- Populate transactions with various types of financial entries
+-- Including recurring revenue, one-time charges, marketing expenses, and other operational costs
+INSERT INTO transactions (transaction_id, subscription_id, transaction_date, amount, transaction_type) VALUES
+-- January 2023 transactions
+(101, 1, '2023-01-15', 99.99, 'recurring'),
+(102, 2, '2023-01-20', 299.99, 'recurring'),
+(103, NULL, '2023-01-31', 5000.00, 'marketing'),
+
+-- February 2023 transactions
+(201, 1, '2023-02-15', 99.99, 'recurring'),
+(202, 2, '2023-02-20', 299.99, 'recurring'),
+(203, 3, '2023-02-01', 999.99, 'recurring'),
+(204, 4, '2023-02-15', 99.99, 'recurring'),
+(205, NULL, '2023-02-28', 6000.00, 'marketing'),
+
+-- March 2023 transactions
+(301, 1, '2023-03-15', 99.99, 'recurring'),
+(302, 2, '2023-03-20', 299.99, 'recurring'),
+(303, 3, '2023-03-01', 999.99, 'recurring'),
+(304, 4, '2023-03-15', 99.99, 'recurring'),
+(305, 5, '2023-03-01', 299.99, 'recurring'),
+(306, 6, '2023-03-15', 99.99, 'recurring'),
+(307, NULL, '2023-03-31', 7000.00, 'marketing'),
+
+-- April 2023 transactions
+(401, 1, '2023-04-15', 99.99, 'recurring'),
+(402, 2, '2023-04-20', 299.99, 'recurring'),
+(403, 3, '2023-04-01', 999.99, 'recurring'),
+(404, 4, '2023-04-15', 99.99, 'recurring'),
+(405, 5, '2023-04-01', 299.99, 'recurring'),
+(406, 6, '2023-04-15', 99.99, 'recurring'),
+(407, 7, '2023-04-01', 299.99, 'recurring'),
+(408, 8, '2023-04-15', 99.99, 'recurring'),
+(409, NULL, '2023-04-30', 8000.00, 'marketing');
+
+-- Add operational expenses
+INSERT INTO transactions (transaction_id, subscription_id, transaction_date, amount, transaction_type) VALUES
+-- January-April 2023 operational expenses
+(501, NULL, '2023-01-31', 15000.00, 'expense'),
+(502, NULL, '2023-02-28', 15500.00, 'expense'),
+(503, NULL, '2023-03-31', 16000.00, 'expense'),
+(504, NULL, '2023-04-30', 16500.00, 'expense');
+
+-- Add one-time charges
+INSERT INTO transactions (transaction_id, subscription_id, transaction_date, amount, transaction_type) VALUES
+(601, 1, '2023-01-15', 500.00, 'onetime'),
+(602, 2, '2023-01-20', 1000.00, 'onetime'),
+(603, 3, '2023-02-01', 2000.00, 'onetime'),
+(604, 4, '2023-02-15', 500.00, 'onetime');
+
+-- Add customer support costs
+INSERT INTO transactions (transaction_id, subscription_id, transaction_date, amount, transaction_type) VALUES
+(701, NULL, '2023-01-31', 5000.00, 'support'),
+(702, NULL, '2023-02-28', 5200.00, 'support'),
+(703, NULL, '2023-03-31', 5400.00, 'support'),
+(704, NULL, '2023-04-30', 5600.00, 'support');
+
+-- Add infrastructure costs
+INSERT INTO transactions (transaction_id, subscription_id, transaction_date, amount, transaction_type) VALUES
+(801, NULL, '2023-01-31', 3000.00, 'infrastructure'),
+(802, NULL, '2023-02-28', 3100.00, 'infrastructure'),
+(803, NULL, '2023-03-31', 3200.00, 'infrastructure'),
+(804, NULL, '2023-04-30', 3300.00, 'infrastructure');
+
+-- Verify data population
+SELECT 'customers' as table_name, COUNT(*) as record_count FROM customers
+UNION ALL
+SELECT 'subscriptions', COUNT(*) FROM subscriptions
+UNION ALL
+SELECT 'transactions', COUNT(*) FROM transactions
+UNION ALL
+SELECT 'plans', COUNT(*) FROM plans;
+
+-- Sample quick analysis query
+SELECT 
+    DATE_FORMAT(transaction_date, '%Y-%m') as month,
+    SUM(CASE WHEN transaction_type = 'recurring' THEN amount ELSE 0 END) as mrr,
+    SUM(CASE WHEN transaction_type = 'marketing' THEN amount ELSE 0 END) as marketing_spend,
+    SUM(CASE WHEN transaction_type = 'expense' THEN amount ELSE 0 END) as operational_expenses
+FROM transactions
+GROUP BY DATE_FORMAT(transaction_date, '%Y-%m')
+ORDER BY month;
