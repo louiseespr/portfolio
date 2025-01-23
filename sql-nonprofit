@@ -1,0 +1,341 @@
+-- Financial Analysis Database for Entrepreneurship Inclusion Initiative
+-- Purpose: Track program expenses, donations, grants, and impact metrics
+
+-- Create schema
+CREATE SCHEMA nonprofit_finance;
+USE nonprofit_finance;
+
+-- Donors table to track individual and corporate contributions
+CREATE TABLE donors (
+    donor_id INT PRIMARY KEY AUTO_INCREMENT,
+    donor_name VARCHAR(100) NOT NULL,
+    donor_type ENUM('individual', 'corporation', 'foundation') NOT NULL,
+    first_donation_date DATE NOT NULL,
+    total_lifetime_giving DECIMAL(12,2) DEFAULT 0,
+    contact_email VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Programs table to track different initiatives
+CREATE TABLE programs (
+    program_id INT PRIMARY KEY AUTO_INCREMENT,
+    program_name VARCHAR(100) NOT NULL,
+    description TEXT,
+    start_date DATE NOT NULL,
+    end_date DATE,
+    annual_budget DECIMAL(12,2),
+    program_manager VARCHAR(100),
+    status ENUM('active', 'completed', 'planned') DEFAULT 'active'
+);
+
+-- Donations tracking
+CREATE TABLE donations (
+    donation_id INT PRIMARY KEY AUTO_INCREMENT,
+    donor_id INT,
+    amount DECIMAL(12,2) NOT NULL,
+    donation_date DATE NOT NULL,
+    program_id INT,
+    donation_type ENUM('one_time', 'recurring', 'grant') NOT NULL,
+    payment_method VARCHAR(50),
+    FOREIGN KEY (donor_id) REFERENCES donors(donor_id),
+    FOREIGN KEY (program_id) REFERENCES programs(program_id)
+);
+
+-- Expenses tracking
+CREATE TABLE expenses (
+    expense_id INT PRIMARY KEY AUTO_INCREMENT,
+    program_id INT,
+    expense_date DATE NOT NULL,
+    amount DECIMAL(12,2) NOT NULL,
+    category ENUM('staff', 'events', 'marketing', 'operations', 'grants_given', 'other') NOT NULL,
+    description TEXT,
+    vendor VARCHAR(100),
+    FOREIGN KEY (program_id) REFERENCES programs(program_id)
+);
+
+-- Impact metrics
+CREATE TABLE impact_metrics (
+    metric_id INT PRIMARY KEY AUTO_INCREMENT,
+    program_id INT,
+    reporting_date DATE NOT NULL,
+    entrepreneurs_supported INT,
+    workshops_conducted INT,
+    mentorship_hours INT,
+    businesses_launched INT,
+    total_grant_amount DECIMAL(12,2),
+    jobs_created INT,
+    FOREIGN KEY (program_id) REFERENCES programs(program_id)
+);
+
+
+-- Sample data insertion
+
+INSERT INTO donors (donor_name, donor_type, first_donation_date, total_lifetime_giving, contact_email) VALUES
+('John Smith', 'individual', '2024-01-15', 5000.00, 'john.smith@email.com'),
+('Tech Solutions Inc', 'corporation', '2024-01-20', 25000.00, 'giving@techsolutions.com'),
+('Community Foundation', 'foundation', '2024-02-01', 50000.00, 'grants@communityfound.org'),
+('Sarah Williams', 'individual', '2024-02-15', 1000.00, 'sarah.w@email.com'),
+('Innovation Corp', 'corporation', '2024-03-01', 15000.00, 'csr@innovation.com');
+
+INSERT INTO programs (program_name, description, start_date, annual_budget, program_manager) VALUES
+('Startup Mentorship', 'One-on-one mentoring for underrepresented entrepreneurs', '2024-01-01', 150000.00, 'Sarah Johnson'),
+('Grant Initiative', 'Seed funding for minority-owned businesses', '2024-01-01', 300000.00, 'Michael Chen'),
+('Workshop Series', 'Educational workshops on business fundamentals', '2024-01-01', 75000.00, 'Lisa Rodriguez');
+
+INSERT INTO donations (donor_id, amount, donation_date, program_id, donation_type, payment_method) VALUES
+(1, 5000.00, '2024-01-15', 1, 'one_time', 'credit_card'),
+(2, 25000.00, '2024-01-20', 2, 'one_time', 'wire_transfer'),
+(3, 50000.00, '2024-02-01', 2, 'grant', 'wire_transfer'),
+(4, 1000.00, '2024-02-15', 3, 'recurring', 'credit_card'),
+(5, 15000.00, '2024-03-01', 1, 'one_time', 'wire_transfer');
+
+INSERT INTO expenses (program_id, expense_date, amount, category, description, vendor) VALUES
+(1, '2024-01-10', 5000.00, 'staff', 'Program coordinator salary', 'Internal'),
+(2, '2024-01-15', 20000.00, 'grants_given', 'Seed funding for startups', 'Grant Recipients'),
+(3, '2024-01-20', 2500.00, 'marketing', 'Workshop promotion', 'Digital Marketing Agency'),
+(1, '2024-02-01', 3000.00, 'events', 'Mentorship meetup', 'Event Space Co'),
+(2, '2024-02-15', 15000.00, 'grants_given', 'Second round funding', 'Grant Recipients');
+
+INSERT INTO impact_metrics (program_id, reporting_date, entrepreneurs_supported, workshops_conducted, mentorship_hours, businesses_launched, total_grant_amount, jobs_created) VALUES
+(1, '2024-03-01', 25, 0, 150, 5, 0.00, 15),
+(2, '2024-03-01', 10, 0, 0, 8, 35000.00, 24),
+(3, '2024-03-01', 50, 12, 36, 3, 0.00, 9);
+
+INSERT INTO programs (program_name, description, start_date, annual_budget, program_manager) VALUES
+('Startup Mentorship', 'One-on-one mentoring for underrepresented entrepreneurs', '2024-01-01', 150000.00, 'Sarah Johnson'),
+('Grant Initiative', 'Seed funding for minority-owned businesses', '2024-01-01', 300000.00, 'Michael Chen'),
+('Workshop Series', 'Educational workshops on business fundamentals', '2024-01-01', 75000.00, 'Lisa Rodriguez');
+
+-- Views for financial analysis
+CREATE VIEW program_financials AS
+SELECT 
+    p.program_name,
+    COALESCE(SUM(d.amount), 0) as total_donations,
+    COALESCE(SUM(e.amount), 0) as total_expenses,
+    COALESCE(SUM(d.amount), 0) - COALESCE(SUM(e.amount), 0) as net_position,
+    COALESCE(COUNT(DISTINCT d.donor_id), 0) as unique_donors
+FROM programs p
+LEFT JOIN donations d ON p.program_id = d.program_id
+LEFT JOIN expenses e ON p.program_id = e.program_id
+GROUP BY p.program_id, p.program_name;
+
+-- Key Performance Indicators (KPIs) View
+CREATE VIEW program_kpis AS
+SELECT 
+    p.program_name,
+    im.entrepreneurs_supported,
+    im.businesses_launched,
+    im.jobs_created,
+    COALESCE(SUM(e.amount), 0) / NULLIF(im.entrepreneurs_supported, 0) as cost_per_entrepreneur,
+    im.total_grant_amount / NULLIF(im.businesses_launched, 0) as avg_grant_per_business
+FROM programs p
+LEFT JOIN impact_metrics im ON p.program_id = im.program_id
+LEFT JOIN expenses e ON p.program_id = e.program_id
+GROUP BY p.program_id, p.program_name, im.entrepreneurs_supported, 
+         im.businesses_launched, im.jobs_created, im.total_grant_amount;
+
+-- Monthly financial trends analysis
+CREATE VIEW monthly_trends AS
+SELECT 
+    DATE_FORMAT(d.donation_date, '%Y-%m') as month,
+    COALESCE(SUM(d.amount), 0) as monthly_donations,
+    COALESCE(SUM(e.amount), 0) as monthly_expenses,
+    COALESCE(SUM(d.amount), 0) - COALESCE(SUM(e.amount), 0) as monthly_net,
+    COUNT(DISTINCT d.donor_id) as donor_count
+FROM donations d
+FULL OUTER JOIN expenses e ON DATE_FORMAT(d.donation_date, '%Y-%m') = DATE_FORMAT(e.expense_date, '%Y-%m')
+GROUP BY month
+ORDER BY month;
+
+-- Donor retention analysis
+CREATE VIEW donor_retention AS
+WITH donor_years AS (
+    SELECT 
+        donor_id,
+        YEAR(donation_date) as donation_year,
+        SUM(amount) as yearly_amount
+    FROM donations
+    GROUP BY donor_id, YEAR(donation_date)
+)
+SELECT 
+    curr.donation_year,
+    COUNT(DISTINCT curr.donor_id) as total_donors,
+    COUNT(DISTINCT prev.donor_id) as retained_donors,
+    ROUND(COUNT(DISTINCT prev.donor_id) * 100.0 / NULLIF(COUNT(DISTINCT curr.donor_id), 0), 2) as retention_rate
+FROM donor_years curr
+LEFT JOIN donor_years prev 
+    ON curr.donor_id = prev.donor_id 
+    AND curr.donation_year = prev.donation_year + 1
+GROUP BY curr.donation_year
+ORDER BY curr.donation_year;
+
+-- Example analytical queries
+-- 1. Program ROI Analysis
+SELECT 
+    p.program_name,
+    SUM(d.amount) as total_funding,
+    SUM(e.amount) as total_costs,
+    (SUM(d.amount) - SUM(e.amount)) / NULLIF(SUM(e.amount), 0) * 100 as roi_percentage,
+    im.businesses_launched,
+    im.jobs_created
+FROM programs p
+LEFT JOIN donations d ON p.program_id = d.program_id
+LEFT JOIN expenses e ON p.program_id = e.program_id
+LEFT JOIN impact_metrics im ON p.program_id = im.program_id
+GROUP BY p.program_id, p.program_name, im.businesses_launched, im.jobs_created;
+
+-- 2. Expense Distribution Analysis
+SELECT 
+    category,
+    SUM(amount) as total_amount,
+    ROUND(SUM(amount) * 100.0 / (SELECT SUM(amount) FROM expenses), 2) as percentage_of_total
+FROM expenses
+GROUP BY category
+ORDER BY total_amount DESC;
+
+-- 3. Donor Segmentation Analysis
+SELECT 
+    donor_type,
+    COUNT(*) as donor_count,
+    ROUND(AVG(total_lifetime_giving), 2) as avg_lifetime_giving,
+    MAX(total_lifetime_giving) as max_donation,
+    SUM(total_lifetime_giving) as total_giving
+FROM donors
+GROUP BY donor_type;
+
+
+-- Visualization Queries
+
+-- 1. Monthly Donation Trends (Time Series Chart)
+SELECT 
+    DATE_FORMAT(donation_date, '%Y-%m') as month,
+    SUM(amount) as total_donations,
+    COUNT(*) as donation_count,
+    AVG(amount) as average_donation
+FROM donations
+GROUP BY month
+ORDER BY month;
+
+-- 2. Program Success Matrix (Bubble Chart)
+SELECT 
+    p.program_name,
+    COALESCE(SUM(d.amount), 0) as total_funding,
+    im.entrepreneurs_supported,
+    im.businesses_launched,
+    im.jobs_created
+FROM programs p
+LEFT JOIN donations d ON p.program_id = d.program_id
+LEFT JOIN impact_metrics im ON p.program_id = im.program_id
+GROUP BY p.program_id, p.program_name, im.entrepreneurs_supported, 
+         im.businesses_launched, im.jobs_created;
+
+-- 3. Expense Distribution (Pie Chart)
+SELECT 
+    category,
+    SUM(amount) as total_amount,
+    ROUND(SUM(amount) * 100.0 / (SELECT SUM(amount) FROM expenses), 1) as percentage
+FROM expenses
+GROUP BY category
+ORDER BY total_amount DESC;
+
+-- 4. Donor Type Distribution (Stacked Bar Chart)
+SELECT 
+    donor_type,
+    DATE_FORMAT(donation_date, '%Y-%m') as month,
+    SUM(d.amount) as donation_amount,
+    COUNT(DISTINCT d.donor_id) as donor_count
+FROM donations d
+JOIN donors dn ON d.donor_id = dn.donor_id
+GROUP BY donor_type, month
+ORDER BY month, donor_type;
+
+-- 5. Impact Metrics Dashboard (Multi-axis Chart)
+SELECT 
+    p.program_name,
+    im.entrepreneurs_supported,
+    im.businesses_launched,
+    im.jobs_created,
+    im.mentorship_hours,
+    im.total_grant_amount,
+    COALESCE(SUM(e.amount), 0) as program_expenses
+FROM programs p
+LEFT JOIN impact_metrics im ON p.program_id = im.program_id
+LEFT JOIN expenses e ON p.program_id = e.program_id
+GROUP BY p.program_id, p.program_name, im.entrepreneurs_supported, 
+         im.businesses_launched, im.jobs_created, im.mentorship_hours,
+         im.total_grant_amount;
+
+-- 6. ROI by Program (Bar Chart)
+SELECT 
+    p.program_name,
+    COALESCE(SUM(d.amount), 0) as total_donations,
+    COALESCE(SUM(e.amount), 0) as total_expenses,
+    CASE 
+        WHEN COALESCE(SUM(e.amount), 0) = 0 THEN 0
+        ELSE ROUND((COALESCE(SUM(d.amount), 0) - COALESCE(SUM(e.amount), 0)) / 
+             COALESCE(SUM(e.amount), 0) * 100, 2)
+    END as roi_percentage
+FROM programs p
+LEFT JOIN donations d ON p.program_id = d.program_id
+LEFT JOIN expenses e ON p.program_id = e.program_id
+GROUP BY p.program_id, p.program_name;
+
+-- 7. Donor Retention Visualization (Line Chart)
+WITH donor_activity AS (
+    SELECT 
+        donor_id,
+        MIN(donation_date) as first_donation,
+        MAX(donation_date) as last_donation,
+        COUNT(*) as donation_count,
+        SUM(amount) as total_amount
+    FROM donations
+    GROUP BY donor_id
+)
+SELECT 
+    DATE_FORMAT(first_donation, '%Y-%m') as cohort_month,
+    COUNT(*) as cohort_size,
+    SUM(CASE WHEN donation_count > 1 THEN 1 ELSE 0 END) as retained_donors,
+    ROUND(AVG(total_amount), 2) as avg_donor_value
+FROM donor_activity
+GROUP BY cohort_month
+ORDER BY cohort_month;
+
+-- 8. Geographic Impact (If you add location data - Heat Map)
+-- Add this column to donors table:
+ALTER TABLE donors ADD COLUMN location VARCHAR(100);
+
+-- Query for geographic distribution
+SELECT 
+    location,
+    COUNT(DISTINCT d.donor_id) as donor_count,
+    SUM(d.amount) as total_donations
+FROM donors dn
+JOIN donations d ON dn.donor_id = d.donor_id
+WHERE location IS NOT NULL
+GROUP BY location
+ORDER BY total_donations DESC;
+
+-- 9. Program Efficiency Metrics (Radar Chart)
+SELECT 
+    p.program_name,
+    COALESCE(SUM(e.amount), 0) / NULLIF(im.entrepreneurs_supported, 0) as cost_per_entrepreneur,
+    COALESCE(SUM(d.amount), 0) / NULLIF(im.businesses_launched, 0) as funding_per_business,
+    im.mentorship_hours / NULLIF(im.entrepreneurs_supported, 0) as hours_per_entrepreneur,
+    im.jobs_created / NULLIF(im.businesses_launched, 0) as jobs_per_business
+FROM programs p
+LEFT JOIN impact_metrics im ON p.program_id = im.program_id
+LEFT JOIN expenses e ON p.program_id = e.program_id
+LEFT JOIN donations d ON p.program_id = d.program_id
+GROUP BY p.program_id, p.program_name, im.entrepreneurs_supported, 
+         im.businesses_launched, im.mentorship_hours, im.jobs_created;
+
+-- 10. Time-based Success Metrics (Area Chart)
+SELECT 
+    DATE_FORMAT(e.expense_date, '%Y-%m') as month,
+    SUM(CASE WHEN e.category = 'grants_given' THEN e.amount ELSE 0 END) as grants_given,
+    COUNT(DISTINCT d.donor_id) as active_donors,
+    SUM(d.amount) as monthly_donations
+FROM expenses e
+LEFT JOIN donations d ON DATE_FORMAT(e.expense_date, '%Y-%m') = DATE_FORMAT(d.donation_date, '%Y-%m')
+GROUP BY month
+ORDER BY month;
